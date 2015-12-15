@@ -51,7 +51,7 @@ def init():
                 crs_id INTEGER NOT NULL,
                 lr2id INTEGER NOT NULL,
                 FOREIGN KEY(crs_id) REFERENCES grade_grade(courseid)
-                UNIQUE(courseid, lr2id)
+                UNIQUE(crs_id, lr2id)
             )''')
         shared_db.conn.commit()
 
@@ -69,9 +69,11 @@ def init():
                 VALUES(?,?)
                 WHERE crs_id=? AND lr2id=?
             ''',(crs[0],ach,crs[0],ach,))
-    conn.commit()
+    shared_db.conn.commit()
 
     return
+
+init()
 
 def func(req,res,res_body):
     body_mod = res_body.decode('cp932',errors='ignore')
@@ -153,4 +155,4 @@ def func(req,res,res_body):
     return res,body_mod
 
 if __name__ == '__main__':
-    init()
+    pass
