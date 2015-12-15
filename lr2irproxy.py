@@ -1,14 +1,31 @@
 #coding: utf-8
 
+from os.path import abspath, basename, dirname
+from glob import glob
 from urlparse import urlparse
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
-from httplib import HTTPMessage, HTTPResponse
-import socket
-from zlib import decompress
 
-from ir_overwrite import *
+from lptools import dpi_sock
 
+
+#
+# import all *.py file(s) and module folder(s) under ./plugins
+# as submodule(s) of plugins module
+#
+# overwrite_rule_dict : names of dictionaries about mapping rules of overwriting
+#                       (defined at ir_overwrite/__init__.py)
+#
+overwrite_rule = ['replace_output','edit_request','edit_response']
+import_files = map(lambda s: basename(s)[:-3], glob(abspath(dirname(__file__))+'/plugins/*.py'))
+import_dirs = map(lambda s: basename(dirname(s)), glob(abspath(dirname(__file__)) + '/plugins/*/__init__.py') )
+fromlist = overwrite_rule + import_files + import_dirs
+plugins = __import__('plugins',globals(),locals(),fromlist,)
+
+
+# IPv4 address of www.dream-pro.info
 WWW_DREAM_PRO_INFO = '202.215.80.119'
+
+
 
 class lr2irproxy(BaseHTTPRequestHandler):
     '''
@@ -24,72 +41,55 @@ class lr2irproxy(BaseHTTPRequestHandler):
 
         return out
 
+
     def do_all(self):
         '''
         for all methods, use this handling function.
         '''
+#        self.protocol_version = 'HTTP/1.1'
         self.req_body = self.rfile.read(int(self.headers.getheader('content-length',0)))
         parsed_path = urlparse(self.path)
         prsd_path = parsed_path.path
         prsd_query = parsed_path.query
 
-        if prsd_path in replace_output:
+        # create original request message
+        req = dpi_sock.DPIReqMsg(self.command,self.path,self.request_version)
+        req.importmsg(self.headers)
+        req.setbody(self.req_body)
+
+        plist = plugins.replace_output(req)
+        if plist:
             # replace whole output
-            status,reason,res_msg,res_body = \
-                eval('%s.func(prsd_path,prsd_query,self.req_body)' % (replace_output[prsd_path],))
+            for pname in plist:
+                sub_mod =getattr(plugins,pname)
+                res, res_body = sub_mod.func(req)
         else:
             # send a request to www.dream-pro.info
-            if prsd_path in edit_request:
+
+            plist = plugins.edit_request(req)
+            for pname in plist:
                 # modify http request header or body
-                req_msg = eval('%s.func(self.headers,self.req_body)' % (replace_output[prsd_path],))
-            else:
-                # use default http request header and body by client
-                req_msg = self.create_request()
+                sub_mod = getattr(plugins,pname)
+                req = sub_mod.func(req)
 
-            # socket
-            try:
-                # because www.dream-pro.info is tlanslated to 127.0.0.1 using hosts' entry,
-                # send message to www.dream-pro.info with socket.socket to make
-                # http connection
-                sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-                sock.connect((WWW_DREAM_PRO_INFO,80))
-                sock.sendall(req_msg)
-            except:
-                print 'SocketError'
-                return
+            # send/recv HTTP message
+            res, res_body = req.send_and_recv()
 
-            res = HTTPResponse(sock)
-            res.begin()
-            version = res.version
-            status = res.status
-            reason = res.reason
-            res_msg = res.msg
-            res_body = res.read()
-            res.close()
-
-            compmeth = res_msg.getheader('content-encoding','').lower()
-            if compmeth and compmeth.find('identity') != 0 :
-                if res_msg.getheader('content-length'):
-                    res.msg.__delitem__('content-length')
-                offset = 0
-                if compmeth.find('gzip') != -1:
-                    offset += 47
-                res_body = decompress(res_body,offset)
-            res_msg['content-encoding'] = 'Identity'
-
-            for h in ('tranfer-encoding','connection'):
-                if h in res_msg.keys():
-                    res_msg.__delitem__(h)
-
-
-            if prsd_path in edit_response:
+            plist = plugins.edit_response(req,res)
+            for pname in plist:
                 # modify http response from www.dream-pro.info
-                res_msg, res_body = eval('%s.func(prsd_query,res_msg,res_body)' % (edit_response[prsd_path],))
+                sub_mod = getattr(plugins,pname)
+                res, res_body = sub_mod.func(req,res,res_body)
 
-        self.send_response(status,reason)
+        self.send_response(res.status,res.reason)
 
-        for hdr in res_msg:
-            self.send_header(hdr,res_msg[hdr])
+        if 'connection' in res.msg.keys():
+            res.msg.__delitem__('connection')
+        if 'keep-alive' in res.msg.keys():
+            res.msg.__delitem__('keep-alive')
+        res.msg['content-length'] = str(len(res_body))
+        for hdr in res.msg:
+            self.send_header(hdr,res.msg[hdr])
         self.end_headers()
 
         self.wfile.write(res_body)
@@ -97,6 +97,9 @@ class lr2irproxy(BaseHTTPRequestHandler):
 
     do_GET  = do_all
     do_POST = do_all
+    do_HEAD = do_all
+
+
 
 def main():
     server = HTTPServer(('www.dream-pro.info', 80), lr2irproxy)
@@ -105,6 +108,7 @@ def main():
         server.serve_forever()
     except:
         pass
+
 
 if __name__ == '__main__':
     main()
