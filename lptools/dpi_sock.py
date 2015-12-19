@@ -8,6 +8,10 @@ import socket
 from httplib import HTTPMessage, HTTPResponse
 from StringIO import StringIO
 from zlib import decompress
+import re
+
+import lxml.etree
+extra_parser = lxml.etree.XMLParser(encoding='cp932')
 
 # IPv4 address of www.dream-pro.info
 WWW_DREAM_PRO_INFO = '202.215.80.119'
@@ -82,8 +86,56 @@ class DPIReqMsg():
 
         return res, res_body
 
+
+def getranking(songmd5):
+    if not (songmd5 == '' or ((len(songmd5) % 32)==0 and (len(songmd5)/32)<=6 and re.compile('[0-9a-zA-Z]*').match(songmd5))):
+        return None
+    else:
+        req = DPIReqMsg('GET','/~lavalse/LR2IR/getrankingxml.cgi?songmd5=%s' % songmd5)
+        res,body = req.send_and_recv()
+        body = body[1:]
+        doctype_end = body.find('>')+1
+        body = body[:doctype_end] + '<dummyroot>' + body[doctype_end:] + '</dummyroot>'
+        return lxml.etree.fromstring(body, parser=extra_parser)
+
+
+def getplayerscore(lr2id,lu=0):
+    try:
+        playerid = int(lr2id)
+        lastupdate = int(lu)
+    except:
+        return None
+    req = DPIReqMsg('GET','/~lavalse/LR2IR/getplayerxml.cgi?id=%d&lastupdate=%d' % (playerid,lastupdate))
+    res, body = req.send_and_recv()
+    body = body[1:]
+    doctype_end = body.find('>')+1
+    body = body[:doctype_end] + '<dummyroot>' + body[doctype_end:] + '</dummyroot>'
+    try:
+        return lxml.etree.fromstring(body, parser=extra_parser)
+    except:
+        return None
+
+
+def getcourseinfo(courseid):
+    try:
+        courseid = int(courseid)
+    except:
+        return None
+    req = DPIReqMsg('GET','/~lavalse/LR2IR/search.cgi?mode=downloadcourse&courseid=%d' % (courseid,))
+    res, body = req.send_and_recv()
+    try:
+        et = lxml.etree.fromstring(body, parser=extra_parser)
+        if et.xpath('/courselist/course'):
+            return et
+        else:
+            return None
+    except Exception as e:
+        return None
+
+
 def main():
     pass
+
 
 if __name__ == '__main__':
     main()
