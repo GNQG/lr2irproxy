@@ -19,7 +19,8 @@ def replace_output(args):
     q_dict = args['query']
     if args['path'] == '/~lavalse/LR2IR/exgrade':
         return 'exgrade'
-    #'/~lavalse/LR2IR/getrankingxml.cgi' : 'create_rival_ranking_xml'
+    elif args['path'] == '/~lavalse/LR2IR/exrival' or args['path'] == '/~lavalse/LR2IR/getrankingxml.cgi':
+        return 'exrival'
 
     return ''
 
@@ -38,10 +39,19 @@ def edit_response(args):
     if args['path'] == '/~lavalse/LR2IR/search.cgi':
         if args['res'].msg.get('content-type','').startswith('text/html'):
             result.append('extend_link')
-            result.append('search_mod')
-        if q_dict.get('mode') and 'ranking' in q_dict.get('mode'):
+        if q_dict.get('mode'):
+            mode = q_dict.get('mode')[0]
+            if 'search' == mode and q_dict.get('type'):
+                search_type = q_dict.get('type')[0]
+                if 'insane' == search_type:
+                    result.append('mod_insane_box')
+                elif 'tag' == search_type:
+                    result.append('related_tags')
+                elif 'keyword' == search_type:
+                    pass
+        elif 'ranking' == mode:
             result.append('exgrade')
-        if q_dict.get('mode') and 'mypage' in q_dict.get('mode'):
+        elif 'mypage' == mode:
             result.append('exgrade')
 
     return result

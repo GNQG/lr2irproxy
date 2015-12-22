@@ -16,13 +16,15 @@ from lptools import dpi_sock
 # import all *.py file(s) and module folder(s) under ./plugins
 # as submodule(s) of plugins module
 #
-# overwrite_rule_dict : names of dictionaries about mapping rules of overwriting
-#                       (defined at ir_overwrite/__init__.py)
+# overwrite_rule : names of functions about mapping rules of overwriting
+#                  (defined at ./plugins/__init__.py)
 #
 overwrite_rule = ['replace_output','edit_request','edit_response']
 import_files = map(lambda s: basename(s)[:-3], glob(abspath(dirname(__file__))+'/plugins/*.py'))
 import_dirs = map(lambda s: basename(dirname(s)), glob(abspath(dirname(__file__)) + '/plugins/*/__init__.py') )
+
 fromlist = overwrite_rule + import_files + import_dirs
+
 plugins = __import__('plugins',globals(),locals(),fromlist,)
 
 
@@ -59,12 +61,15 @@ class lr2irproxy(BaseHTTPRequestHandler):
 
         query_dict = parse_qs(prsd_query)
         if self.command == 'POST':
-            ctype, pdict = parse_header(self.headers.getheader('content-type'))
-            if ctype == 'multipart/form-data':
-                self.req_body = parse_multipart(self.rfile,pdict)
-            elif ctype == 'application/x-www-form-urlencoded':
-                self.req_body = parse_qs(self.rfile.read(int(self.headers.getheader('content-length',0))))
-            else:
+            try:
+                ctype, pdict = parse_header(self.headers.getheader('content-type'))
+                if ctype == 'multipart/form-data':
+                    self.req_body = parse_multipart(self.rfile,pdict)
+                elif ctype == 'application/x-www-form-urlencoded':
+                    self.req_body = parse_qs(self.rfile.read(int(self.headers.getheader('content-length',0))))
+                else:
+                    self.req_body = self.rfile.read(int(self.headers.getheader('content-length',0)))
+            except:
                 self.req_body = self.rfile.read(int(self.headers.getheader('content-length',0)))
 
         # create original request message

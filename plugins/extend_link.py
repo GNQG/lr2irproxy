@@ -11,9 +11,11 @@ def func(args):
 
     if len(links):
         links_et = rt.xpath('/html/body/div/div/div[@id="menu"]')[0]
+        links_et[-1].tail = ' | '
         for link in links:
-            if links_et[-1].tail:
-                links_et[-1].tail += ' | '
             links_et.append(link)
+            if not links_et[-1].tail:
+                links_et[-1].tail = ' | '
+
 
     return args
