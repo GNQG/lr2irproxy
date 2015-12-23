@@ -1,14 +1,12 @@
 #coding: utf-8
 import urllib2
 from urlparse import parse_qs, unquote
-import json
 import sqlite3
-import types
 import time
 
 import lxml.html
 
-from lptools import shared_db, dpi_sock, simpleres
+from lptools import shared_db, dpi_sock, simpleres, lr2files
 from plugins import extend_link
 
 
@@ -40,6 +38,7 @@ def register_scores(lr2id,lu=0):
                 :option,:lastupdate
             )
         ''',score_tmp)
+    print '[LR2ID:%06d]imported scores: %d' % (lr2id,len(score_list))
     return
 
 
@@ -85,6 +84,8 @@ def init():
     cur.execute('SELECT lr2id,lastupdate FROM exrival_rival WHERE active != 0')
 
     active_rivals = cur.fetchall()
+
+    print 'the number of active rivals: %s' % len(active_rivals)
 
     for rival in active_rivals:
         time_now = int(time.time())
@@ -210,15 +211,19 @@ def func(args):
 
                 if body_dict.get('mode') and 'active' in body_dict.get('mode'):
                     # refresh active states
-                    cur.execute('SELECT id FROM exrival_set')
-                    id_all = [int(row['id']) for row in cur.fetchall()]
+                    cur.execute('SELECT lr2id FROM exrival_rival')
+                    id_all = [int(row['lr2id']) for row in cur.fetchall()]
                     active_list = []
+
+                    for key in body_dict:
+                        if key.startswith('active_') and key[7:].isdigit() and body_dict[key][0] == '1':
+                            active_list.append(int(key[7:]))
 
                     try:
                         # UPDATE new active states
-                        cur.execute('UPDATE exrival_set SET active=0')
+                        cur.execute('UPDATE exrival_rival SET active=0')
                         for a_id in active_list:
-                            cur.execute('UPDATE exrival_set SET active=1 WHERE id=?', (a_id,))
+                            cur.execute('UPDATE exrival_rival SET active=1 WHERE lr2id=?', (a_id,))
                         shared_db.conn.commit()
                         outmsg = u'[exrival] active state was refreshed successfully'
                     except Exception as e:
@@ -281,12 +286,16 @@ def func(args):
             result['res'] = res
             result['res_etree'] = rt
 
+            result = extend_link.func(result)
+
         elif args['path'] == '/~lavalse/LR2IR/getrankingxml.cgi':
+            # emulate getraningxml.cgi using data in exrival_score table in shared_db
             res = simpleres.SimpleHTTPResponse()
             res.msg['content-type'] = 'text/plain'
             q_dict = {}
 
             if args['req'].method == 'POST':
+                # request from LR2body.exe only has content-types header...
                 try:
                     q_dict = parse_qs(args['req'].body)
                 except:
@@ -295,41 +304,76 @@ def func(args):
             bmsmd5 = q_dict.get('songmd5')[0] if q_dict.get('songmd5') else ''
             if not bmsmd5 or len(bmsmd5)>32:
                 # getplayerxml does not get course score and '' score
+                # if given those, return default getrankingxml.cgi value
                 raw = dpi_sock.DPIReqMsg('GET','/~lavalse/LR2IR/getrankingxml.cgi?songmd5=%s' % bmsmd5)
                 res, res_body = raw.send_and_recv()
                 result['res'] = res
                 result['res_body'] = res_body
                 return result
 
+            # request body from LR2body.exe contains lr2id of current user
+            # use it to get latest score of given bmsmd5
+            mylr2id = q_dict.get('id')[0] if q_dict.get('id') else ''
+            mylr2id = int(mylr2id) if mylr2id.isdigit() else 0
+
+            # active rivals' scores who played the song of given bmsmd5
             cur.execute('''
                 SELECT er.lr2id AS id,current_name,screen_name,
                        clear,notes,combo,pg,gr,minbp
                 FROM exrival_rival AS er
                 INNER JOIN exrival_score AS es ON er.lr2id=es.lr2id
-                WHERE er.active!=0 AND es.hash=?
-            ''',(bmsmd5,))
+                WHERE er.active!=0 AND es.hash=? AND er.lr2id=?
+            ''',(bmsmd5,mylr2id,))
             played = cur.fetchall()
+
+            # blank scores for other active rivals
             cur.execute('''
                 SELECT lr2id AS id,current_name,screen_name,
                        0 AS clear, 0 AS notes, 0 AS combo, 0 AS pg, 0 AS gr, 0 AS minbp
                 FROM exrival_rival
-                WHERE active!=0 AND NOT id IN (
+                WHERE active!=0 AND lr2id!=? AND NOT id IN (
                     SELECT lr2id FROM exrival_score WHERE hash=?
                 )
-            ''',(bmsmd5,))
+            ''',(bmsmd5,mylr2id,))
             notplayed = cur.fetchall()
 
+            myscore = []
+            if mylr2id > 0 and str(mylr2id) in lr2files.id_db_dict:
+                # use local score database
+                scdb_cur = lr2files.id_db_dict[str(mylr2id)].cursor()
+                scdb_cur.execute('SELECT irid AS id,name FROM player')
+                mydata = dict(scdb_cur.fetchone())
+                # if already have local score, use it
+                # if not, do nothing
+                scdb_cur.execute('''
+                    SELECT {id} AS id, {name} AS name,
+                           clear, totalnotes AS notes, maxcombo AS combo,
+                           perfect AS pg, great AS gr, minbp
+                    FROM score WHERE hash=?
+                '''.format(**mydata), (bmsmd5,))
+                # len(myscore) = 0 or 1
+                myscore = scdb_cur.fetchall()
+
+
+            # create rankingxml body
             rt = lxml.etree.fromstring('<ranking>\n</ranking>')
             elem_keys = ['name','id','clear','notes','combo','pg','gr','minbp']
             score_template = u'<score>\n%s\t</score>' % (''.join(['\t\t<%s>{%s}</%s>\n' % (key,key,key,) for key in elem_keys]),)
-            for score in played + notplayed:
+            for score in played + notplayed + myscore:
                 sc = dict(score)
-                sc['name'] = sc['current_name'] if sc['screen_name'] is None else sc['screen_name']
+                if not 'name' in sc:
+                    # myscore already has 'name' element
+                    sc['name'] = sc['current_name'] if sc['screen_name'] is None else sc['screen_name']
                 sc_et = lxml.etree.fromstring(score_template.format(**sc))
                 sc_et.tail = '\n\t'
                 rt.append(sc_et)
             rt.text = '\n\t'
             rt[-1].tail = '\n'
+
+            # important: response of getrankingxml.cgi is not xml
+            # 1. it starts from '#'
+            # 2. xml 'ranking' follows
+            # 3. 'lastupdate' element inserted at the end of body
             res_body = '#'
             res_body += lxml.etree.tostring(rt,encoding='cp932').replace('cp932','shift_jis')
             res_body += '\n<lastupdate>%s</lastupdate>' % time.strftime('%Y/%m/%d %H:%M:%S', time.localtime(int(time.time())))
