@@ -322,7 +322,7 @@ def func(args):
                        clear,notes,combo,pg,gr,minbp
                 FROM exrival_rival AS er
                 INNER JOIN exrival_score AS es ON er.lr2id=es.lr2id
-                WHERE er.active!=0 AND es.hash=? AND er.lr2id=?
+                WHERE er.active!=0 AND es.hash=? AND er.lr2id!=?
             ''',(bmsmd5,mylr2id,))
             played = cur.fetchall()
 
@@ -334,7 +334,7 @@ def func(args):
                 WHERE active!=0 AND lr2id!=? AND NOT id IN (
                     SELECT lr2id FROM exrival_score WHERE hash=?
                 )
-            ''',(bmsmd5,mylr2id,))
+            ''',(mylr2id,bmsmd5,))
             notplayed = cur.fetchall()
 
             myscore = []
@@ -346,7 +346,7 @@ def func(args):
                 # if already have local score, use it
                 # if not, do nothing
                 scdb_cur.execute('''
-                    SELECT {id} AS id, {name} AS name,
+                    SELECT {id} AS id, '{name}' AS name,
                            clear, totalnotes AS notes, maxcombo AS combo,
                            perfect AS pg, great AS gr, minbp
                     FROM score WHERE hash=?
