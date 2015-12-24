@@ -384,64 +384,8 @@ def func(args):
     else:
         # 'res' in args == True
         # 'edit_response'
-        if not 'res_etree' in result:
-            result['res_etree'] = lxml.html.fromstring(result['res_body'].decode('cp932',errors='ignore'))
-        rt = result['res_etree']
         pass
 
-        if q_dict.get('mode') and 'ranking' in q_dict.get('mode'):
-            # access to /~lavalse/LR2IR/search.cgi with query 'mode=ranking'
-            # adds exgrade(s) info to each user
-            ranking_table = rt.xpath('/html/body/div/div/table')[-1]
-            try:
-                ranking_lr2id = [(int(parse_qs(tr[1][0].get('href'))['playerid'].pop()),) for tr in ranking_table[1::2]]
-            except:
-                ranking_lr2id = []
-            exgrades = []
-            for lr2id in ranking_lr2id:
-                cur.execute('''
-                    SELECT expr FROM exgrade_grade AS eg
-                    INNER JOIN (
-                        SELECT set_id, MAX(level) AS maxlv FROM exgrade_grade
-                        WHERE courseid IN (SELECT crs_id FROM exgrade_achiever WHERE lr2id=?)
-                              AND set_id IN (SELECT id FROM exgrade_set WHERE active != 0)
-                        GROUP BY set_id
-                    ) AS bg ON eg.set_id=bg.set_id AND eg.level=bg.maxlv
-                    ORDER BY eg.set_id ASC
-                    ''', lr2id)
-                exgrades.append(cur.fetchall())
-            def update_text(s):
-                if s[0]:
-                    s[1][2].append(lxml.html.fromstring('<br>'))
-                    s[1][2][0].tail = '/'.join([exg['expr'] for exg in s[0]])
-                return s
-            map(update_text, zip(exgrades,ranking_table[1::2]))
-
-        if (q_dict.get('mode') and 'mypage' in q_dict.get('mode')) and (q_dict.get('playerid')):
-            # access to /~lavalse/LR2IR/search.cgi with query 'mode=ranking'
-            # adds exgrade(s) info to mypage
-            try:
-                playerid = int(q_dict.get('playerid')[0])
-                grade_cell = rt.xpath('/html/body/div/div/table[@border="0"]/tr/td')
-            except:
-                playerid = 0
-            if playerid and len(grade_cell) > 2:
-                grade_cell = grade_cell[2]
-                cur.execute('''
-                    SELECT expr FROM exgrade_grade AS eg
-                    INNER JOIN (
-                        SELECT set_id, MAX(level) AS maxlv FROM exgrade_grade
-                        WHERE courseid IN (SELECT crs_id FROM exgrade_achiever WHERE lr2id=?)
-                              AND set_id IN (SELECT id FROM exgrade_set WHERE active!=0)
-                        GROUP BY set_id
-                    ) AS bg ON eg.set_id=bg.set_id AND eg.level=bg.maxlv
-                    ORDER BY eg.set_id ASC
-                    ''', (playerid,))
-                exgrades = cur.fetchall()
-                if exgrades:
-                    grade_cell.text += ' / ' + ' / '.join([exg['expr'] for exg in exgrades])
-
-        result = extend_link.func(result)
 
     return result
 
