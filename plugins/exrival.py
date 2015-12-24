@@ -12,6 +12,7 @@ from plugins import extend_link
 
 extend_link.links.append(lxml.html.fromstring('<a href="exrival">exrival</a>'))
 
+rankinfo = {'bmsmd5':'','name':''}
 
 
 class AddRivalError(Exception):
@@ -102,6 +103,7 @@ def init():
 
 
 def func(args):
+    global rankinfo
     result = args
 
     q_dict = args['query']
@@ -292,7 +294,6 @@ def func(args):
             # emulate getraningxml.cgi using data in exrival_score table in shared_db
             res = simpleres.SimpleHTTPResponse()
             res.msg['content-type'] = 'text/plain'
-            q_dict = {}
 
             if args['req'].method == 'POST':
                 # request from LR2body.exe only has content-types header...
@@ -337,12 +338,21 @@ def func(args):
             ''',(mylr2id,bmsmd5,))
             notplayed = cur.fetchall()
 
+
+            # add my best score to ranking from local db
             myscore = []
             if mylr2id > 0 and str(mylr2id) in lr2files.id_db_dict:
                 # use local score database
                 scdb_cur = lr2files.id_db_dict[str(mylr2id)].cursor()
                 scdb_cur.execute('SELECT irid AS id,name FROM player')
                 mydata = dict(scdb_cur.fetchone())
+                if rankinfo['bmsmd5'] == bmsmd5 and rankinfo['name']:
+                    # rankinfo consist of info of this song
+                    # rankinfo['name'] contains player's IR rank
+                    mydata['name'] = rankinfo['name']
+                # after overwriting, initialize rankinfo
+                rankinfo['bmsmd5'] = ''
+                rankinfo['name'] = ''
                 # if already have local score, use it
                 # if not, do nothing
                 scdb_cur.execute('''
@@ -384,8 +394,25 @@ def func(args):
     else:
         # 'res' in args == True
         # 'edit_response'
-        pass
+        if args['path'] == '/~lavalse/LR2IR/score.cgi':
+            # import my rank in IR by parsing response of score.cgi
+            if args['req'].method == 'POST':
+                try:
+                    q_dict = parse_qs(args['req'].body)
+                except Exception as e:
+                    pass
 
+            try:
+                # if score.cgi succeed, ginven body is
+                # #{myrank},{the number of total players in IR},{clear rate(not failed)},
+                score_res = args['res_body'].split(',')
+                if len(score_res) < 4:
+                    raise Exception
+                rankinfo['bmsmd5'] = q_dict['songmd5'][0]
+                rankinfo['name'] = 'IR'+score_res[0]+'/'+score_res[1]
+            except Exception as e:
+                rankinfo['bmsmd5'] = ''
+                rankinfo['name'] = ''
 
     return result
 

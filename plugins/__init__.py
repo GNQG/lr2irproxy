@@ -52,6 +52,10 @@ def edit_response(args):
             if 'ranking' == mode or 'mypage' == mode:
                 result.append('exgrade')
 
+    # for exrival
+    if args['path'] == '/~lavalse/LR2IR/score.cgi':
+        result.append('exrival')
+
     # for mod_insane_box
     if args['path'] == '/~lavalse/LR2IR/search.cgi':
         if q_dict.get('mode'):
