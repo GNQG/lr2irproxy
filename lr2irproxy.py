@@ -6,6 +6,7 @@ from urlparse import urlparse, parse_qs
 from cgi import parse_header, parse_multipart
 from urllib import quote
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
+from StringIO import StringIO
 
 import lxml.html
 
@@ -60,17 +61,19 @@ class lr2irproxy(BaseHTTPRequestHandler):
         prsd_query = parsed_path.query
 
         query_dict = parse_qs(prsd_query)
+        ctype = ''
+        rawbody = self.rfile.read(int(self.headers.getheader('content-length',0)))
         if self.command == 'POST':
             try:
                 ctype, pdict = parse_header(self.headers.getheader('content-type'))
                 if ctype == 'multipart/form-data':
-                    self.req_body = parse_multipart(self.rfile,pdict)
+                    self.req_body = parse_multipart(StringIO(rawbody),pdict)
                 elif ctype == 'application/x-www-form-urlencoded':
-                    self.req_body = parse_qs(self.rfile.read(int(self.headers.getheader('content-length',0))))
+                    self.req_body = parse_qs(rawbody)
                 else:
-                    self.req_body = self.rfile.read(int(self.headers.getheader('content-length',0)))
+                    self.req_body = rawbody
             except:
-                self.req_body = self.rfile.read(int(self.headers.getheader('content-length',0)))
+                self.req_body = rawbody
 
         # create original request message
         req = dpi_sock.DPIReqMsg(self.command,self.path,self.request_version)
@@ -87,6 +90,7 @@ class lr2irproxy(BaseHTTPRequestHandler):
         else:
             # send a request to www.dream-pro.info
 
+            req.setbody(rawbody)
             plist = plugins.edit_request(args)
             for pname in plist:
                 # modify http request header or body
@@ -96,8 +100,16 @@ class lr2irproxy(BaseHTTPRequestHandler):
             # send/recv HTTP message
             res, res_body = req.send_and_recv()
 
+            if res_body.find('"mypageform">') != -1:
+                res_body = res_body.replace('<table  border=0>','',1)
+                res_body = res_body.replace(
+                    '"mypageform">',
+                    '"mypageform"><table border="0">'
+                )
+
             args['res'] = res
             args['res_body'] = res_body
+
 
             plist = plugins.edit_response(args)
             for pname in plist:

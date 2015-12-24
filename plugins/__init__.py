@@ -17,9 +17,13 @@ __all__ = dict_master + import_files + import_dirs
 
 def replace_output(args):
     q_dict = args['query']
+
+    # for exgrade
     if args['path'] == '/~lavalse/LR2IR/exgrade':
         return 'exgrade'
-    elif args['path'] == '/~lavalse/LR2IR/exrival' or args['path'] == '/~lavalse/LR2IR/getrankingxml.cgi':
+
+    # for exrival
+    if args['path'] == '/~lavalse/LR2IR/exrival' or args['path'] == '/~lavalse/LR2IR/getrankingxml.cgi':
         return 'exrival'
 
     return ''
@@ -36,22 +40,35 @@ def edit_response(args):
     q_dict = args['query']
 
 
+    # for etend_link
     if args['path'] == '/~lavalse/LR2IR/search.cgi':
         if args['res'].msg.get('content-type','').startswith('text/html'):
             result.append('extend_link')
+
+    # for exgrade
+    if args['path'] == '/~lavalse/LR2IR/search.cgi':
+        if q_dict.get('mode'):
+            mode = q_dict.get('mode')[0]
+            if 'ranking' == mode or 'mypage' == mode:
+                result.append('exgrade')
+
+    # for mod_insane_box
+    if args['path'] == '/~lavalse/LR2IR/search.cgi':
         if q_dict.get('mode'):
             mode = q_dict.get('mode')[0]
             if 'search' == mode and q_dict.get('type'):
                 search_type = q_dict.get('type')[0]
                 if 'insane' == search_type:
                     result.append('mod_insane_box')
-                elif 'tag' == search_type:
+
+    # for related_tags
+    if args['path'] == '/~lavalse/LR2IR/search.cgi':
+        if q_dict.get('mode'):
+            mode = q_dict.get('mode')[0]
+            if 'search' == mode and q_dict.get('type'):
+                search_type = q_dict.get('type')[0]
+                if 'tag' == search_type:
                     result.append('related_tags')
-                elif 'keyword' == search_type:
-                    pass
-        elif 'ranking' == mode:
-            result.append('exgrade')
-        elif 'mypage' == mode:
-            result.append('exgrade')
+
 
     return result
